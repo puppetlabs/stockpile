@@ -1,0 +1,55 @@
+# stockpile
+
+A simple, durable Clojure queueing library.  While this is believed to
+be reasonably solid, it is still relatively new.
+
+Stockpile supports the durable storage and retrieval of data.  After
+storage, stockpile returns an `entry` that can be used to access the
+data later, and when no longer needed, the data can be atomically
+`discard`ed.
+
+Stockpile is intentionally designed to keep minimal state outside the
+filesystem.  When opening a queue, stockpile will notify the caller
+about every existing entry, but does not retain any of that
+information itself.  It is up to the caller to preserve any entries
+that it might want to access later.
+
+The ordering of any two entries can be compared (by `id`), but that
+ordering is not guaranteed to be exact, only some approximation of
+their relative insertion order.
+
+A metadata string can be provided for each item stored, but the length
+of that string may be limited by the underlying filesystem.  (The
+string is currently encoded into the queue item's pathname so that it
+can be retrieved without having to open or read the file itself).  The
+filesystem might also alter the metadata in other ways, for example if
+it does not preserve case.  The path that's ultimately specified to
+the filesystem by the JVM may be affected by the locale, and on Linux
+with common filesystems, for example, often produces UTF-8 paths.  See
+`(doc stockpile/store)` for further information.
+
+Stockpile is intended to work correctly on any filesystem where rename
+(ATOMIC\_MOVE) works correctly, and where calling fsync/fdatasync on a
+file and its parent directory makes the file durable.  At last look,
+[that did not include OS X](https://bugs.openjdk.java.net/browse/JDK-8080589).
+
+Unless the items being inserted into the queue are large enough for
+the sequential transfer rate to dominate, the insertion rate is likely
+to be limited by the maximum "fsync/fdatasync rate" of the underlying
+filesystem.
+
+The current implementation tracks the queue ids using an AtomicLong,
+and while that counter could overflow, even at 100,000 stores per
+second, it should require about 290 million years.
+
+## Usage
+
+See src/stockpile.clj and test/stockpile_test.clj for the API
+documentation and sample usage.
+
+## License
+
+Copyright © 2016 Puppet Labs Inc
+
+Distributed under the Apache License Version 2.0.  See ./LICENSE for
+details.
