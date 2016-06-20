@@ -121,6 +121,14 @@
 (defn- qpath [q]
   (.resolve (:directory q) "q"))
 
+(defn- queue-entry-path
+  [q id metadata]
+  (.resolve (qpath q) (apply str id (when metadata ["-" metadata]))))
+
+(defn- entry-path
+  [q entry]
+  (queue-entry-path q (entry-id entry) (entry-meta entry)))
+
 (defn- filename->entry
   "Returns an entry if name can be parsed as such, i.e. either as
   an integer or integer-metadata, nil otherwise."
@@ -155,13 +163,6 @@
                                    (existing-entries top))]
     [(->Stockpile top (AtomicLong. (inc max-id)))
      reduction]))
-
-(defn- queue-path [q id metadata]
-  (.resolve (qpath q)
-            (apply str id (when metadata ["-" metadata]))))
-
-(defn- entry-path [q entry]
-  (queue-path q (entry-id entry) (entry-meta entry)))
 
 
 ;;; Stable, public interface
@@ -257,7 +258,7 @@
        (try
          (fsync tmp-dest false)
          (loop [id likely-id]
-           (let [target (queue-path q id metadata)
+           (let [target (queue-entry-path q id metadata)
                  ;; Can't recur from catch
                  moved? (try
                           (rename-durably tmp-dest target true)
