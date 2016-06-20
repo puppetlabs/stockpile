@@ -2,7 +2,7 @@
   (:import
    [clojure.lang BigInt]
    [java.io File FileOutputStream]
-   [java.nio.file FileSystemException Path Paths]
+   [java.nio.file AtomicMoveNotSupportedException FileSystemException Path Paths]
    [java.nio.channels FileChannel]
    [java.nio.file FileAlreadyExistsException Files OpenOption StandardCopyOption]
    [java.nio.file.attribute FileAttribute]
@@ -282,11 +282,32 @@
 
 (defn discard
   "Atomically and durably discards the entry (returned by store) from
-  the queue.  The results of calling this more than once for a given
-  entry are undefined."
-  [q entry]
-  (Files/deleteIfExists (entry-path q entry))
-  ;; Not entirely certain this sync is necessary *if* everyone
-  ;; guarantess that you either see the file or not, and if we're OK
-  ;; with the possibility of spurious redelivery.
-  (fsync (qpath q) true))
+  the queue.  The discarded data will be placed at the destination
+  path (durably if possible), when one is provided.  This should be
+  much more efficient, and likely safer if the destination is at least
+  on the same filesystem as the queue.  The results of calling this
+  more than once for a given entry are undefined."
+  ;; Not entirely certain the queue parent dir syncs are necessary *if*
+  ;; everyone guarantees that you either see the file or not, and if
+  ;; we're OK with the possibility of spurious redelivery.
+  ([q entry]
+   (Files/deleteIfExists (entry-path q entry))
+   (fsync (qpath q) true))
+  ([q entry destination]
+   (let [src (entry-path q entry)
+         destination (as-path destination)
+         moved? (try
+                  (Files/move src destination
+                              (into-array [StandardCopyOption/ATOMIC_MOVE
+                                           StandardCopyOption/REPLACE_EXISTING]))
+                  true
+                  (catch UnsupportedOperationException ex
+                    false)
+                  (catch AtomicMoveNotSupportedException ex
+                    false))]
+     (when-not moved?
+       (Files/copy src destination
+                   (into-array [StandardCopyOption/REPLACE_EXISTING]))
+       (Files/delete src))
+     (fsync (.getParent destination) true)
+     (fsync (qpath q) true))))

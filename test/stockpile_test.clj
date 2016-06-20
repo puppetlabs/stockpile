@@ -129,6 +129,18 @@
          (is (= [] entries))
          (is (not (.exists garbage))))))))
 
+(deftest discard-to-destination
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.resolve tmpdir "queue")
+           discarded (.resolve tmpdir "discarded")
+           newq (stock/create qdir)]
+       (let [entry (store-str newq "foo")
+             [q read-entries] (stock/open qdir conj ())]
+         (is (= [entry] read-entries))
+         (stock/discard q entry discarded)
+         (is (= "foo" (String. (Files/readAllBytes discarded) "UTF-8"))))))))
+
 (def billion 1000000000)
 
 (defn enqueue-all [q items]
