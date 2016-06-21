@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+usage()
+{
+  echo "Usage: $0 create PARENT_TMPDIR UID GID"
+  echo "       $0 destroy PARENT_TMPDIR"
+}
+
+create-tinyfs()
+{
+  local tmpdir="$1" uid="$2" gid="$3" origdir
+  origdir="$(pwd)"
+  cd -P "$tmpdir"
+  dd if=/dev/zero of=tinyfs.img bs=10MB count=1
+  chmod 600 tinyfs.img
+  mke2fs -F tinyfs.img
+  mkdir tinyfs
+  mount -oloop tinyfs.img tinyfs
+  chown "$uid:$gid" tinyfs
+  cd "$origdir"
+}
+
+destroy-tinyfs()
+{
+  local tmpdir="$1"
+  umount -l -d "$tmpdir"/tinyfs
+  rm -f "$tmpdir"/tinyfs.img
+}
+
+set -x
+
+case "$1" in
+  create)
+    shift
+    if [ "$#" -ne 3 ]; then
+        usage 1>&2
+        exit 1
+    fi
+    create-tinyfs "$@"
+    ;;
+  destroy)
+    shift
+    if [ "$#" -ne 1 ]; then
+        usage 1>&2
+        exit 1
+    fi
+    destroy-tinyfs "$1"
+    ;;
+  *)
+    usage 1>&2
+    exit 1
+esac

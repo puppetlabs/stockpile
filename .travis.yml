@@ -1,0 +1,10 @@
+
+language: clojure
+sudo: required
+dist: trusty
+
+jdk:
+  - openjdk8
+  - openjdk7
+
+script: ./run-test --use-sudo

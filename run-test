@@ -1,0 +1,81 @@
+#!/bin/bash
+
+set -euxo pipefail
+
+# Make sure we're in the right place
+test -x ext/test/manage-tinyfs
+test -f src/stockpile.clj
+
+manage_tinyfs="$(pwd)/ext/test/manage-tinyfs"
+
+usage()
+{
+  echo "Usage: $0 [--use-sudo|--no-sudo]"
+}
+
+tmpdir=''
+destroy_tinyfs=''
+
+clean-up()
+{
+  if test "$destroy_tinyfs"; then
+      as-root "$manage_tinyfs" destroy "$tmpdir"
+  fi
+  if test "$tmpdir"; then
+      rm -rf "$tmpdir"
+  fi
+}
+
+use_sudo=''
+
+while test "$#" -ne 0; do
+  case "$1" in
+    --use-sudo)
+      shift
+      use_sudo=true
+      ;;
+    --no-sudo)
+      shift
+      use_sudo=''
+      ;;
+    *)
+      usage 1>&2
+      exit 1
+      ;;
+  esac
+done
+
+test_tinyfs=''
+
+if test "$(uname -s)" != Linux; then
+    echo "Not on Linux; skipping root tests" 1>&2
+else
+  if test "$use_sudo"; then
+      as-root()
+      {
+        sudo -i "$@"
+      }
+      test_tinyfs=true
+  elif test "$(id -u)" = 0; then
+      as-root()
+      {
+        "$@"
+      }
+      test_tinyfs=true
+  else
+    echo "Not root, and --use-sudo not specified; skipping root tests" 1>&2
+  fi
+fi
+
+trap clean-up EXIT
+
+if [ "$test_tinyfs" ]; then
+    tmpdir="$(mktemp -d "$(pwd)/target/run-test-XXXXXXX")"
+    destroy_tinyfs=true
+    as-root "$manage_tinyfs" create "$tmpdir" "$(id -u)" "$(id -g)"
+    export STOCKPILE_TEST_TINY_FS="$tmpdir/tinyfs"
+fi
+
+java -version
+# Don't exec or the trap won't fire
+lein test
