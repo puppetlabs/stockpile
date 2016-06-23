@@ -8,7 +8,13 @@
            [java.nio.file Files NoSuchFileException]
            [java.nio.file.attribute FileAttribute]))
 
-(defn- random-path-segment [n]
+(def small-test-fs
+  (if-let [v (System/getenv "STOCKPILE_TINY_TEST_FS")]
+    (stock/path-get v)
+    (binding [*out* *err*]
+      (println "STOCKPILE_TINY_TEST_FS not defined; skipping related tests"))))
+
+(defn random-path-segment [n]
   (loop [s (RandomStringUtils/random n)]
     (if (and (= -1 (.indexOf s java.io.File/separator))
              (= -1 (.indexOf s (int \u0000))))
@@ -129,17 +135,26 @@
          (is (= [] entries))
          (is (not (.exists garbage))))))))
 
+(defn test-discard-entry-to [destination tmpdir q-name]
+  (let [qdir (.resolve tmpdir q-name)
+        newq (stock/create qdir)]
+    (let [entry (store-str newq "foo")
+          [q read-entries] (stock/open qdir conj ())]
+      (is (= [entry] read-entries))
+      (stock/discard q entry destination)
+      (is (= "foo" (String. (Files/readAllBytes destination) "UTF-8"))))))
+
 (deftest discard-to-destination
   (call-with-temp-dir-path
    (fn [tmpdir]
-     (let [qdir (.resolve tmpdir "queue")
-           discarded (.resolve tmpdir "discarded")
-           newq (stock/create qdir)]
-       (let [entry (store-str newq "foo")
-             [q read-entries] (stock/open qdir conj ())]
-         (is (= [entry] read-entries))
-         (stock/discard q entry discarded)
-         (is (= "foo" (String. (Files/readAllBytes discarded) "UTF-8"))))))))
+     (test-discard-entry-to (.resolve tmpdir "discarded") tmpdir "q1")
+     (when small-test-fs
+       (let [dest (Files/createTempFile small-test-fs "discarded-" ""
+                                        (into-array FileAttribute []))]
+         (try
+           (test-discard-entry-to dest tmpdir "q2")
+           (finally
+             (Files/delete dest))))))))
 
 (def billion 1000000000)
 
