@@ -1,7 +1,8 @@
 # stockpile
 
 A simple, durable Clojure queueing library.  While this is believed to
-be reasonably solid, it is still relatively new.
+be reasonably solid, it is still relatively new, and the API or
+behavior may change without warning.
 
 Stockpile supports the durable storage and retrieval of data.  After
 storage, stockpile returns an `entry` that can be used to access the
