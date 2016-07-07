@@ -1,7 +1,7 @@
 (ns stockpile
   (:import
    [clojure.lang BigInt]
-   [java.io File FileOutputStream]
+   [java.io File FileOutputStream ByteArrayInputStream]
    [java.nio.file AtomicMoveNotSupportedException FileSystemException Path Paths]
    [java.nio.channels FileChannel]
    [java.nio.file FileAlreadyExistsException Files OpenOption StandardCopyOption]
@@ -24,7 +24,7 @@
       nil)))
 
 (defprotocol AsPath
-  (as-path [x]))
+  (as-path ^Path [x]))
 
 (extend-protocol AsPath
   Path
@@ -71,9 +71,16 @@
                                    (into-array OpenOption []))]
     (.force fc metadata?)))
 
+(def ^:private copt-atomic StandardCopyOption/ATOMIC_MOVE)
+(def ^:private copt-replace StandardCopyOption/REPLACE_EXISTING)
+(def ^:private copts-type (class (into-array StandardCopyOption [])))
+
+(defn ^copts-type copts [opts]
+  (into-array StandardCopyOption opts))
+
 (defn- atomic-move [src dest]
   (Files/move (as-path src) (as-path dest)
-              (into-array [StandardCopyOption/ATOMIC_MOVE])))
+              (copts [copt-atomic])))
 
 (defn- rename-durably
   "If possible, atomically renames src to dest (each of which may be a
@@ -118,12 +125,14 @@
             true))
         (throw ex)))))
 
-(defn- qpath [q]
-  (.resolve (:directory q) "q"))
+(defn- qpath ^Path [{:keys [^Path directory] :as q}]
+  (.resolve directory "q"))
 
 (defn- queue-entry-path
   [q id metadata]
-  (.resolve (qpath q) (apply str id (when metadata ["-" metadata]))))
+  (let [^Path parent (qpath q)
+        ^String entry-name (apply str id (when metadata ["-" metadata]))]
+    (.resolve parent entry-name)))
 
 (defn- entry-path
   [q entry]
@@ -132,7 +141,7 @@
 (defn- filename->entry
   "Returns an entry if name can be parsed as such, i.e. either as
   an integer or integer-metadata, nil otherwise."
-  [name]
+  [^String name]
   (let [dash (.indexOf name (int \-))]
     (if (= -1 dash)
       (parse-integer name)
@@ -140,10 +149,10 @@
       (when-let [id (parse-integer (subs name 0 dash))]
         (->MetaEntry id (subs name (inc dash)))))))
 
-(defn- existing-entries [top]
+(defn- existing-entries [^Path top]
   (let [dirstream (Files/newDirectoryStream (.resolve top "q"))]
     (remove nil?
-            (map (fn [p]
+            (map (fn [^Path p]
                    (let [name (str (.getName p (dec (.getNameCount p))))]
                      (if (.startsWith name "tmp-")
                        (do
@@ -181,8 +190,9 @@
                        ;; BufferedWriter (FilterOutputStream) in this
                        ;; case (otherwise it'll be broken with at
                        ;; least openjdk-7.
-                       #(with-open [out (FileOutputStream. (.toFile %))]
-                          (.write out (.getBytes "0 stockpile" "UTF-8")))
+                       (fn [^Path f]
+                          (with-open [out (FileOutputStream. (.toFile f))]
+                            (.write out (.getBytes "0 stockpile" "UTF-8"))))
                        false)
     (fsync top true)
     (->Stockpile top (AtomicLong. 0))))
@@ -233,20 +243,19 @@
   metadata.  Of course how many Unicode characters that will allow
   depends on their size when converted to UTF-8."
   ([q stream] (store q stream nil))
-  ([q stream metadata]
-   (let [next (:next-likely-id q)
+  ([q ^ByteArrayInputStream stream metadata]
+   (let [^AtomicLong next (:next-likely-id q)
          likely-id (.getAndIncrement next)
          qd (qpath q)]
      (when-not likely-id
        (throw (IllegalStateException.
                (format "cannot write to queue in %s while opening it"
                        (pr-str (-> qd .toAbsolutePath str))))))
-     (let [tmp-dest (create-tmp-file qd)]
+     (let [^Path tmp-dest (create-tmp-file qd)]
        ;; It might be possible to optimize some cases with
        ;; transferFrom/transferTo eventually.
        (try
-         (Files/copy stream tmp-dest
-                     (into-array [StandardCopyOption/REPLACE_EXISTING]))
+         (Files/copy stream tmp-dest (copts [copt-replace]))
          (catch Exception ex
            ;; This approach will be revisited/revised after we discuss
            ;; the alternatives a bit further.
@@ -294,20 +303,18 @@
    (Files/deleteIfExists (entry-path q entry))
    (fsync (qpath q) true))
   ([q entry destination]
-   (let [src (entry-path q entry)
-         destination (as-path destination)
+   (let [^Path src (entry-path q entry)
+         ^Path destination (as-path destination)
          moved? (try
                   (Files/move src destination
-                              (into-array [StandardCopyOption/ATOMIC_MOVE
-                                           StandardCopyOption/REPLACE_EXISTING]))
+                              (copts [copt-atomic copt-replace]))
                   true
                   (catch UnsupportedOperationException ex
                     false)
                   (catch AtomicMoveNotSupportedException ex
                     false))]
      (when-not moved?
-       (Files/copy src destination
-                   (into-array [StandardCopyOption/REPLACE_EXISTING]))
+       (Files/copy src destination (copts [copt-replace]))
        (Files/delete src))
      (fsync (.getParent destination) true)
      (fsync (qpath q) true))))
