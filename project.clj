@@ -1,4 +1,4 @@
-(defproject stockpile "0.0.1-SNAPSHOT"
+(defproject stockpile "0.0.1"
   :description "Simple, durable Clojure queuing library"
   ;; :url "http://example.com/FIXME"
   :license {:name "Apache License Version 2.0"
