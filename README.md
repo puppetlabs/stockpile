@@ -1,7 +1,8 @@
 # stockpile
 
 A simple, durable Clojure queueing library.  While this is believed to
-be reasonably solid, it is still relatively new.
+be reasonably solid, it is still relatively new, and the API or
+behavior may change without warning.
 
 Stockpile supports the durable storage and retrieval of data.  After
 storage, stockpile returns an `entry` that can be used to access the
@@ -46,6 +47,24 @@ second, it should require about 290 million years.
 
 See src/stockpile.clj and test/stockpile_test.clj for the API
 documentation and sample usage.
+
+## Testing
+
+As expected, "lein test" will run the test suite, but there are some
+additional tests can only be run if `STOCKPILE\_TINY\_TEST\_FS` is set
+to a directory that resides on an otherwise quiet filesystem with less
+than 10MB of free space, that is not the current filesystem:
+
+    STOCKPILE_TINY_TEST_FS=~/tmp/tiny lein test
+
+During the tests stockpile may repeatedly fill that filesystem.
+
+You can also run the tests via `./run-test`, and if you're on Linux
+and root, it will automatically set up, use, and tear down a suitable
+tiny loopback filesystem.  Alternately, if you have sudo access to
+root, you can invoke `./run-test --use-sudo` to do the same.  Though
+invoking `./run-test` outside of a "throwaway" virtual machine is not
+recommended right now.
 
 ## License
 
