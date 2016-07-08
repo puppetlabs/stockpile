@@ -21,9 +21,13 @@
       s
       (recur (RandomStringUtils/random n)))))
 
-(defn rm-r [pathstr]
-  ;; Life's too short...
-  (assert (zero? (:exit (shell/sh "rm" "-r" pathstr)))))
+ (defn rm-r [pathstr]
+   ;; Life's too short...
+   (let [rm (shell/sh "rm" "-r" pathstr)]
+     (when-not (zero? (:exit rm))
+       (throw (-> "'rm -r %s' failed: %s"
+                  (format (pr-str pathstr) (pr-str rm))
+                  Exception.)))))
 
 (defn call-with-temp-dir-path
   [f]
