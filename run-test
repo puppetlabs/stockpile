@@ -73,7 +73,7 @@ if [ "$test_tinyfs" ]; then
     tmpdir="$(mktemp -d "$(pwd)/target/run-test-XXXXXXX")"
     destroy_tinyfs=true
     as-root "$manage_tinyfs" create "$tmpdir" "$(id -u)" "$(id -g)"
-    export STOCKPILE_TEST_TINY_FS="$tmpdir/tinyfs"
+    export STOCKPILE_TINY_TEST_FS="$tmpdir/tinyfs"
 fi
 
 java -version
