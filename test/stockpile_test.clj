@@ -12,7 +12,8 @@
   (if-let [v (System/getenv "STOCKPILE_TINY_TEST_FS")]
     (stock/path-get v)
     (binding [*out* *err*]
-      (println "STOCKPILE_TINY_TEST_FS not defined; skipping related tests"))))
+      (println "STOCKPILE_TINY_TEST_FS not defined; skipping related tests")
+      false)))
 
 (defn random-path-segment [n]
   (loop [s (RandomStringUtils/random n)]
