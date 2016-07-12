@@ -10,7 +10,7 @@ manage_tinyfs="$(pwd)/ext/test/manage-tinyfs"
 
 usage()
 {
-  echo "Usage: $0 [--use-sudo|--no-sudo]"
+  echo "Usage: $0 [--use-sudo|--no-sudo] [-- LEIN_TEST_ARGS]"
 }
 
 tmpdir=''
@@ -37,6 +37,10 @@ while test "$#" -ne 0; do
     --no-sudo)
       shift
       use_sudo=''
+      ;;
+    --)
+      shift
+      break
       ;;
     *)
       usage 1>&2
@@ -78,4 +82,4 @@ fi
 
 java -version
 # Don't exec or the trap won't fire
-lein test
+lein test "$@"
