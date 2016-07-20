@@ -247,10 +247,6 @@
    (let [^AtomicLong next (:next-likely-id q)
          likely-id (.getAndIncrement next)
          qd (qpath q)]
-     (when-not likely-id
-       (throw (IllegalStateException.
-               (format "cannot write to queue in %s while opening it"
-                       (pr-str (-> qd .toAbsolutePath str))))))
      (let [^Path tmp-dest (create-tmp-file qd)]
        ;; It might be possible to optimize some cases with
        ;; transferFrom/transferTo eventually.
