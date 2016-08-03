@@ -3,16 +3,18 @@
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer :all])
-  (:import [org.apache.commons.lang3 RandomStringUtils]
-           [java.io ByteArrayInputStream File]
-           [java.nio.file Files NoSuchFileException]
-           [java.nio.file.attribute FileAttribute]))
+  (:import
+   [org.apache.commons.lang3 RandomStringUtils]
+   [java.io ByteArrayInputStream File IOException]
+   [java.nio.file Files NoSuchFileException OpenOption StandardOpenOption]
+   [java.nio.file.attribute FileAttribute]))
 
 (def small-test-fs
   (if-let [v (System/getenv "STOCKPILE_TINY_TEST_FS")]
     (stock/path-get v)
     (binding [*out* *err*]
-      (println "STOCKPILE_TINY_TEST_FS not defined; skipping related tests"))))
+      (println "STOCKPILE_TINY_TEST_FS not defined; skipping related tests")
+      false)))
 
 (defn random-path-segment [n]
   (loop [s (RandomStringUtils/random n)]
@@ -159,6 +161,45 @@
            (test-discard-entry-to dest tmpdir "q2")
            (finally
              (Files/delete dest))))))))
+
+(defn fill-filesystem [path]
+  "Returns truish value if the filesystem containing path is likely full."
+  (let [append StandardOpenOption/APPEND
+        buf (byte-array (* 64 1024) (byte \?))
+        write-chunks (fn [write-chunk open-opts]
+                       (with-open [out (Files/newOutputStream
+                                        path
+                                        (into-array OpenOption open-opts))]
+                         (try
+                           (while true (write-chunk out))
+                           (catch IOException ex true))))]
+    ;; Write smaller and smaller chunks; finish up with single bytes.
+    (write-chunks #(.write % buf 0 (* 64 1024)) [])
+    (write-chunks #(.write % buf 0 1024) [append])
+    (write-chunks #(.write % (int \?)) [append])))
+
+(deftest full-filesystem-behavior
+  (when small-test-fs
+    (let [qdir (.resolve small-test-fs "full-q")
+          nopedir (.resolve small-test-fs "no-q")
+          q (stock/create qdir)
+          balloon (Files/createTempFile small-test-fs "balloon-" ""
+                                        (into-array FileAttribute []))]
+      (try
+        (let [firehose (future (fill-filesystem balloon))
+              result (deref firehose (* 30 1000) nil)]
+          (is result)
+          (if-not result
+            (future-cancel firehose)
+            (let [free (.getUsableSpace (Files/getFileStore balloon))]
+              (is (= 0 free))
+              (when (zero? free)
+                (is (thrown? IOException (stock/create nopedir)))
+                (is (thrown? IOException (store-str q "foo")))))))
+        (finally
+          (Files/delete balloon)))
+      (let [[q read-entries] (stock/open qdir conj ())]
+        (is (= [] read-entries))))))
 
 (def billion 1000000000)
 

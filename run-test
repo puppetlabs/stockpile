@@ -10,7 +10,7 @@ manage_tinyfs="$(pwd)/ext/test/manage-tinyfs"
 
 usage()
 {
-  echo "Usage: $0 [--use-sudo|--no-sudo]"
+  echo "Usage: $0 [--use-sudo|--no-sudo] [-- LEIN_TEST_ARGS]"
 }
 
 tmpdir=''
@@ -37,6 +37,10 @@ while test "$#" -ne 0; do
     --no-sudo)
       shift
       use_sudo=''
+      ;;
+    --)
+      shift
+      break
       ;;
     *)
       usage 1>&2
@@ -73,9 +77,9 @@ if [ "$test_tinyfs" ]; then
     tmpdir="$(mktemp -d "$(pwd)/target/run-test-XXXXXXX")"
     destroy_tinyfs=true
     as-root "$manage_tinyfs" create "$tmpdir" "$(id -u)" "$(id -g)"
-    export STOCKPILE_TEST_TINY_FS="$tmpdir/tinyfs"
+    export STOCKPILE_TINY_TEST_FS="$tmpdir/tinyfs"
 fi
 
 java -version
 # Don't exec or the trap won't fire
-lein test
+lein test "$@"
