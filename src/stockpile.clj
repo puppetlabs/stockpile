@@ -245,12 +245,7 @@
   ([q stream] (store q stream nil))
   ([q ^ByteArrayInputStream stream metadata]
    (let [^AtomicLong next (:next-likely-id q)
-         likely-id (.getAndIncrement next)
          qd (qpath q)]
-     (when-not likely-id
-       (throw (IllegalStateException.
-               (format "cannot write to queue in %s while opening it"
-                       (pr-str (-> qd .toAbsolutePath str))))))
      (let [^Path tmp-dest (create-tmp-file qd)]
        ;; It might be possible to optimize some cases with
        ;; transferFrom/transferTo eventually.
@@ -266,8 +261,9 @@
            (throw ex)))
        (try
          (fsync tmp-dest false)
-         (loop [id likely-id]
-           (let [target (queue-entry-path q id metadata)
+         (loop []
+           (let [id (.getAndIncrement next)
+                 target (queue-entry-path q id metadata)
                  ;; Can't recur from catch
                  moved? (try
                           (rename-durably tmp-dest target true)
@@ -275,10 +271,8 @@
                           (catch FileAlreadyExistsException ex
                             false))]
              (if moved?
-               (do
-                 (.getAndIncrement next)
-                 (entry id metadata))
-               (recur (.getAndIncrement next)))))
+               (entry id metadata)
+               (recur))))
          (catch Exception ex
            (throw (ex-info "unable to commit" {:kind ::unable-to-commit
                                                :stream-data tmp-dest}
