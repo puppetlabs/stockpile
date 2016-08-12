@@ -300,8 +300,7 @@
    (let [^Path src (entry-path q entry)
          ^Path destination (as-path destination)
          moved? (try
-                  (Files/move src destination
-                              (copts [copt-atomic copt-replace]))
+                  (Files/move src destination (copts [copt-atomic]))
                   true
                   (catch UnsupportedOperationException ex
                     false)
