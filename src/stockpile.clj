@@ -176,6 +176,12 @@
 
 ;;; Stable, public interface
 
+(defn next-likely-id
+  "Returns a likely id for the next message stored in the q.  No
+  subsequent entry ids will be less than this value."
+  [{^AtomicLong next :next-likely-id :as q}]
+  (.get next))
+
 (defn create
   "Creates a new queue in directory, which must not exist, and returns
   the queue."

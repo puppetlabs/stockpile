@@ -54,13 +54,23 @@
   ([q s metadata]
    (stock/store q (-> s (.getBytes "UTF-8") ByteArrayInputStream.) metadata)))
 
+(deftest entry-ids
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     ;; Expectations specific to the current implementation
+     (let [q (stock/create (.toFile (.resolve tmpdir "queue")))]
+       (is (zero? (stock/next-likely-id q)))
+       (let [e (store-str q "first")]
+         (is (zero? (stock/entry-id e)))
+         (is (= 1 (stock/next-likely-id q)))
+         (let [e (store-str q "second")]
+           (is (= 1 (stock/entry-id e)))
+           (is (= 2 (stock/next-likely-id q)))))))))
+
 (deftest basics
   (call-with-temp-dir-path
    (fn [tmpdir]
      (let [q (stock/create (.toFile (.resolve tmpdir "queue")))]
-
-       (store-str q "foo")
-
        (let [entry-1 (store-str q "foo")
              entry-2 (store-str q "bar" "*so* meta")
              id-1 (stock/entry-id entry-1)
