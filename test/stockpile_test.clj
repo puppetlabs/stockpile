@@ -98,11 +98,13 @@
      (let [qdir (.toFile (.resolve tmpdir "queue"))
            newq (stock/create qdir)]
        (let [entry-1 (store-str newq "foo" "meta foo")
-             [q read-entries] (stock/open qdir conj ())]
+             q (stock/open qdir)
+             read-entries (stock/reduce q conj ())]
          (is (= [entry-1] read-entries))
          (is (= "foo" (slurp-entry q entry-1)))
          (let [entry-2 (store-str q "bar" "meta bar")]
-           (let [[q read-entries] (stock/open qdir conj #{})]
+           (let [q (stock/open qdir)
+                 read-entries (stock/reduce q conj #{})]
              (is (= #{entry-2 entry-1} read-entries))
              (is (= "foo" (slurp-entry q entry-1)))
              (is (= "bar" (slurp-entry q entry-2))))))))))
@@ -147,7 +149,8 @@
            garbage (File. qdir "q/tmp-garbage")]
        (stock/create qdir)
        (io/copy "foo" (File. qdir "q/tmp-garbage"))
-       (let [[q entries] (stock/open qdir conj ())]
+       (let [q (stock/open qdir)
+             entries (stock/reduce q conj ())]
          (is (= [] entries))
          (is (not (.exists garbage))))))))
 
@@ -155,7 +158,8 @@
   (let [qdir (.resolve tmpdir q-name)
         newq (stock/create qdir)]
     (let [entry (store-str newq "foo")
-          [q read-entries] (stock/open qdir conj ())]
+          q (stock/open qdir)
+          read-entries (stock/reduce q conj ())]
       (is (= [entry] read-entries))
       (stock/discard q entry destination)
       (is (= "foo" (String. (Files/readAllBytes destination) "UTF-8"))))))
@@ -208,7 +212,8 @@
                 (is (thrown? IOException (store-str q "foo")))))))
         (finally
           (Files/delete balloon)))
-      (let [[q read-entries] (stock/open qdir conj ())]
+      (let [q (stock/open qdir)
+            read-entries (stock/reduce q conj ())]
         (is (= [] read-entries))))))
 
 (def billion 1000000000)
