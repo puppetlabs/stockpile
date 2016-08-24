@@ -1,8 +1,10 @@
 (ns stockpile
+  (:refer-clojure :exclude [reduce])
   (:import
    [clojure.lang BigInt]
    [java.io File FileOutputStream ByteArrayInputStream]
-   [java.nio.file AtomicMoveNotSupportedException FileSystemException Path Paths]
+   [java.nio.file AtomicMoveNotSupportedException DirectoryStream
+    FileSystemException Path Paths]
    [java.nio.channels FileChannel]
    [java.nio.file FileAlreadyExistsException Files OpenOption StandardCopyOption]
    [java.nio.file.attribute FileAttribute]
@@ -13,6 +15,9 @@
 ;;   - qdir/q/INTEGER                    # message
 ;;   - qdir/q/INTEGER-ENCODED_METADATA   # message
 ;;   - qdir/q/tmp-BLARG                  # pending message
+
+(defn- basename [^Path path]
+  (.getName path (dec (.getNameCount path))))
 
 (defn ^Path path-get [^String s & more-strings]
   (Paths/get s (into-array String more-strings)))
@@ -149,32 +154,25 @@
       (when-let [id (parse-integer (subs name 0 dash))]
         (->MetaEntry id (subs name (inc dash)))))))
 
-(defn- existing-entries [^Path top]
-  (let [dirstream (Files/newDirectoryStream (.resolve top "q"))]
-    (remove nil?
-            (map (fn [^Path p]
-                   (let [name (str (.getName p (dec (.getNameCount p))))]
-                     (if (.startsWith name "tmp-")
-                       (do
-                         (Files/deleteIfExists p)
-                         nil)
-                       (filename->entry name))))
-                 (-> dirstream .iterator iterator-seq)))))
-
 (defrecord Stockpile [directory next-likely-id])
 
-(defn- fs->queue
-  [top reducer base-val]
-  (let [[max-id reduction] (reduce (fn [[max-id result] entry]
-                                     [(max max-id (entry-id entry))
-                                      (reducer result entry)])
-                                   [0 base-val]
-                                   (existing-entries top))]
-    [(->Stockpile top (AtomicLong. (inc max-id)))
-     reduction]))
+(defn- reduce-paths
+  [f val ^DirectoryStream dirstream]
+  (with-open [_ dirstream]
+    (clojure.core/reduce f val (-> dirstream .iterator iterator-seq))))
+
+(defn- plausible-prefix?
+  [s]
+  (-> #"^[0-9](?:-.)?+" (.matcher s) .find))
 
 
 ;;; Stable, public interface
+
+(defn next-likely-id
+  "Returns a likely id for the next message stored in the q.  No
+  subsequent entry ids will be less than this value."
+  [{^AtomicLong next :next-likely-id :as q}]
+  (.get next))
 
 (defn create
   "Creates a new queue in directory, which must not exist, and returns
@@ -198,14 +196,10 @@
     (->Stockpile top (AtomicLong. 0))))
 
 (defn open
-  "Opens the queue in directory, and returns the queue.
-  Calls existing-entry-reducer as-per reduce for each existing entry
-  in q (the ordering of the calls is unspecified).  The reduction may
-  be escaped by throwing a unique exception (cf. slingshot).
-  Currently deletes any existing file in the queue whose name starts
-  with \"tmp-\".  Returns
-  [q reduction].  For example: (open \"foo\" conj [])."
-  [directory existing-entry-reducer reduction-base-val]
+  "Opens the queue in directory, and returns it.  Expects only
+  stockpile created files in the directory, and currently deletes any
+  existing file in the queue whose name starts with \"tmp-\"."
+  [directory]
   (let [top (as-path directory)
         q (.resolve top "q")]
     (let [info-file (.resolve top "stockpile")
@@ -215,7 +209,37 @@
                 (format "Invalid queue token %s found in %s"
                         (pr-str info)
                         (pr-str info-file))))))
-    (fs->queue top existing-entry-reducer reduction-base-val)))
+    (let [max-id (reduce-paths (fn [result ^Path p]
+                                 (let [name (str (basename p))]
+                                   (cond
+                                     (.startsWith name "tmp-")
+                                     (do (Files/deleteIfExists p) result)
+
+                                     (plausible-prefix? name)
+                                     (max result (-> name
+                                                     filename->entry
+                                                     entry-id))
+                                     
+                                     :else
+                                     result)))
+                               0
+                               (Files/newDirectoryStream q))]
+      (->Stockpile top (AtomicLong. (inc max-id))))))
+
+(defn reduce
+  "Calls (f reduction entry) for each existing entry as-per reduce,
+  with val as the initial reduction, and returns the result.  The
+  ordering of the calls is unspecified, as is the effect of concurrent
+  discards.  The reduction may be escaped by throwing a unique
+  exception (cf. slingshot).  For example: (reduce \"foo\" conj [])."
+  [q f val]
+  (reduce-paths (fn [result ^Path p]
+                  (let [name (-> p basename str)]
+                    (if-not (plausible-prefix? name)
+                      result
+                      (f result (filename->entry name)))))
+                val
+                (Files/newDirectoryStream (qpath q))))
 
 (defn store
   "Atomically and durably enqueues the content of stream, and returns
@@ -300,8 +324,7 @@
    (let [^Path src (entry-path q entry)
          ^Path destination (as-path destination)
          moved? (try
-                  (Files/move src destination
-                              (copts [copt-atomic copt-replace]))
+                  (Files/move src destination (copts [copt-atomic]))
                   true
                   (catch UnsupportedOperationException ex
                     false)

@@ -9,11 +9,11 @@ storage, stockpile returns an `entry` that can be used to access the
 data later, and when no longer needed, the data can be atomically
 `discard`ed.
 
-Stockpile is intentionally designed to keep minimal state outside the
-filesystem.  When opening a queue, stockpile will notify the caller
-about every existing entry, but does not retain any of that
-information itself.  It is up to the caller to preserve any entries
-that it might want to access later.
+Stockpile is explicitly designed to keep minimal state outside the
+filesystem.  After opening a queue, you can call `reduce` to traverse
+the existing entries, but stockpile itself does not retain information
+about the entries.  You must preserve any that you might want to
+access later.
 
 The ordering of any two entries can be compared (by `id`), but that
 ordering is not guaranteed to be exact, only some approximation of
@@ -42,6 +42,9 @@ filesystem.
 The current implementation tracks the queue ids using an AtomicLong,
 and while that counter could overflow, even at 100,000 stores per
 second, it should require about 290 million years.
+
+Stockpile's behavior given unexpected files inside its directory is
+undefined.
 
 ## Usage
 
