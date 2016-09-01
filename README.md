@@ -54,7 +54,7 @@ usage.
 ## Testing
 
 As expected, "lein test" will run the test suite, but there are some
-additional tests can only be run if `STOCKPILE\_TINY\_TEST\_FS` is set
+additional tests can only be run if `STOCKPILE_TINY_TEST_FS` is set
 to a directory that resides on an otherwise quiet filesystem with less
 than 10MB of free space, that is not the current filesystem:
 
