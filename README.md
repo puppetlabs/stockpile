@@ -27,7 +27,7 @@ filesystem might also alter the metadata in other ways, for example if
 it does not preserve case.  The path that's ultimately specified to
 the filesystem by the JVM may be affected by the locale, and on Linux
 with common filesystems, for example, often produces UTF-8 paths.  See
-`(doc stockpile/store)` for further information.
+the queue `store` docstring for further information.
 
 Stockpile is intended to work correctly on any filesystem where rename
 (ATOMIC\_MOVE) works correctly, and where calling fsync/fdatasync on a
@@ -48,8 +48,8 @@ undefined.
 
 ## Usage
 
-See src/stockpile.clj and test/stockpile_test.clj for the API
-documentation and sample usage.
+See queue.clj and queue_test.clj for the API documentation and sample
+usage.
 
 ## Testing
 

@@ -1,4 +1,4 @@
-(ns stockpile
+(ns puppetlabs.stockpile.queue
   (:refer-clojure :exclude [reduce])
   (:import
    [clojure.lang BigInt]
