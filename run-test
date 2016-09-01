@@ -4,7 +4,7 @@ set -euxo pipefail
 
 # Make sure we're in the right place
 test -x ext/test/manage-tinyfs
-test -f src/stockpile.clj
+test -f src/puppetlabs/stockpile/queue.clj
 
 manage_tinyfs="$(pwd)/ext/test/manage-tinyfs"
 

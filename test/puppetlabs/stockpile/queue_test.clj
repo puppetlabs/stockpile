@@ -1,5 +1,5 @@
-(ns stockpile-test
-  (:require [stockpile :as stock]
+(ns puppetlabs.stockpile.queue-test
+  (:require [puppetlabs.stockpile.queue :as stock]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer :all])
