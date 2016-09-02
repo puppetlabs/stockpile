@@ -4,7 +4,7 @@
    [clojure.lang BigInt]
    [java.io File FileOutputStream ByteArrayInputStream]
    [java.nio.file AtomicMoveNotSupportedException DirectoryStream
-    FileSystemException Path Paths]
+    FileSystemException NoSuchFileException Path Paths]
    [java.nio.channels FileChannel]
    [java.nio.file FileAlreadyExistsException Files OpenOption StandardCopyOption]
    [java.nio.file.attribute FileAttribute]
@@ -52,20 +52,6 @@
   Long
   (entry-id [this] this)
   (entry-meta [this] nil))
-
-(defn entry [id metadata]
-  (let [id (if (integer? id)
-             (long id)
-             (throw
-              (IllegalArgumentException. (str "id is not an integer: " id))))]
-    (cond
-      (nil? metadata) id
-
-      (not (string? metadata))
-      (throw
-       (IllegalArgumentException. (str "metadata is not a string: " metadata)))
-
-      :else (->MetaEntry id metadata))))
 
 (defn- create-tmp-file [parent]
   (Files/createTempFile (as-path parent) "tmp-" ""
@@ -167,6 +153,20 @@
 
 
 ;;; Stable, public interface
+
+(defn entry [id metadata]
+  (let [id (if (integer? id)
+             (long id)
+             (throw
+              (IllegalArgumentException. (str "id is not an integer: " id))))]
+    (cond
+      (nil? metadata) id
+
+      (not (string? metadata))
+      (throw
+       (IllegalArgumentException. (str "metadata is not a string: " metadata)))
+
+      :else (->MetaEntry id metadata))))
 
 (defn next-likely-id
   "Returns a likely id for the next message stored in the q.  No
@@ -303,9 +303,22 @@
                            ex))))))))
 
 (defn stream
-  "Returns an unbuffered stream of the entry's data."
+  "Returns an unbuffered stream of the entry's data.  Throws an
+  ex-info exception of {:kind ::no-such-entry :entry e :source s} if
+  the requested entry does not exist.  Currently the :source will
+  always be a Path."
   [q entry]
-  (Files/newInputStream (entry-path q entry) (into-array OpenOption [])))
+  (let [path (entry-path q entry)]
+    (try
+      (Files/newInputStream path (make-array OpenOption 0))
+      (catch NoSuchFileException ex
+        (let [m (entry-meta entry)
+              id (entry-id entry)]
+          (throw (ex-info (str "No file found for entry "
+                               (if-not m id (pr-str [id m]))
+                               " at " (pr-str (str path)))
+                          {:kind ::no-such-entry :entry entry :source path}
+                          ex)))))))
 
 (defn discard
   "Atomically and durably discards the entry (returned by store) from

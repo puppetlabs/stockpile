@@ -46,6 +46,9 @@
     (rm-r tempdirstr)
     result))
 
+(defn entry-path [q entry]
+  (#'stock/queue-entry-path q (stock/entry-id entry) (stock/entry-meta entry)))
+
 (defn slurp-entry [q entry]
   (slurp (stock/stream q entry)))
 
@@ -88,9 +91,11 @@
 
          (stock/discard q entry-1)
          (is (= "bar" (slurp-entry q entry-2)))
-         ;; Implementation detail, but worth checking for current implementation
-         (is (thrown? NoSuchFileException
-                      (slurp-entry q entry-1))))))))
+         (try
+           (slurp-entry q entry-1)
+           (catch Exception ex
+             (= {:entry entry-1 :source (entry-path q entry-1)}
+                (ex-data ex)))))))))
 
 (deftest basic-persistence
   (call-with-temp-dir-path
@@ -278,10 +283,11 @@
         (map (fn [i entry]
                (is (= (str i) (slurp-entry q entry)))
                (stock/discard q entry)
-               ;; Implementation detail, but worth checking for
-               ;; current implementation
-               (is (thrown? NoSuchFileException
-                            (slurp-entry q entry))))
+               (try
+                 (slurp-entry q entry)
+                 (catch Exception ex
+                   (= {:entry entry :source (entry-path q entry)}
+                      (ex-data ex)))))
              (range batch-size)
              entries))
        (binding [*out* *err*]
