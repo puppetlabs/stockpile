@@ -146,7 +146,7 @@
          ;; chars could expand to say 36 encoded bytes.
          (let [metadata (random-path-segment (rand-int 8))
                entry (store-str q metadata metadata)]
-           (is (.startsWith metadata (stock/entry-meta entry)))))))))
+           (is (= metadata (stock/entry-meta entry)))))))))
 
 (deftest existing-tmp-removal
   (call-with-temp-dir-path
@@ -245,7 +245,7 @@
                                  (let [m (and make-meta (make-meta))
                                        ent (store-str q (str i) m)]
                                    (when m
-                                     (is (.startsWith m (stock/entry-meta ent))))
+                                     (is (= m (stock/entry-meta ent))))
                                    [m ent])))
                   stop (System/nanoTime)
                   _ (binding [*out* *err*]
