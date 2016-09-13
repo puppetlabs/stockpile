@@ -53,7 +53,8 @@
   (slurp (stock/stream q entry)))
 
 (defn store-str
-  ([q s] (store-str q s nil))
+  ([q s]
+   (stock/store q (-> s (.getBytes "UTF-8") ByteArrayInputStream.)))
   ([q s metadata]
    (stock/store q (-> s (.getBytes "UTF-8") ByteArrayInputStream.) metadata)))
 
