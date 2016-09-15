@@ -325,15 +325,25 @@
                               (if make-meta "with" "without")
                               (double (/ batch-size (/ (- stop start) billion))))
                       (flush))
-
-                  ;; Uncontended dequeue
+                  ;; Uncontended streams
                   start (System/nanoTime)
                   _ (is (= (set (map str (range batch-size)))
                            (set (for [[metadata entry] items]
                                   (slurp-entry q entry)))))
                   stop (System/nanoTime)
                   _ (binding [*out* *err*]
-                      (printf "Dequeued %d tiny messages %s metadata at %.2f/s\n"
+                      (printf "Streamed %d tiny messages %s metadata at %.2f/s\n"
+                              batch-size
+                              (if make-meta "with" "without")
+                              (double (/ batch-size (/ (- stop start) billion))))
+                      (flush))
+                  ;; Uncontended discard
+                  start (System/nanoTime)
+                  _ (doseq [[metadata entry] items]
+                      (stock/discard q entry))
+                  stop (System/nanoTime)
+                  _ (binding [*out* *err*]
+                      (printf "Discarded %d tiny messages %s metadata at %.2f/s\n"
                               batch-size
                               (if make-meta "with" "without")
                               (double (/ batch-size (/ (- stop start) billion))))
