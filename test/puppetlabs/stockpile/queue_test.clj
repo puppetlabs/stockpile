@@ -235,6 +235,25 @@
        (is (.exists (.toFile (:path data))))
        (is (= write-failed (.getCause ex)))))))
 
+(deftest streaming-missing-entry
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.toFile (.resolve tmpdir "queue"))
+           delete-failed (Exception. "delete")
+           write-failed (Exception. "write")
+           q (stock/create qdir)
+           entry (stock/entry 0 nil)
+           ex (try
+                (stock/stream q entry)
+                (catch Exception ex
+                  ex))
+           data (ex-data ex)]
+       (is (= ::stock/no-such-entry (:kind data)))
+       (is (= entry (:entry data)))
+       (is (= (entry-path q entry) (:source data)))
+       (is (not (.exists (.toFile (:source data)))))
+       (is (instance? NoSuchFileException (.getCause ex)))))))
+
 (deftest commit-failure-during-store
   (call-with-temp-dir-path
    (fn [tmpdir]
