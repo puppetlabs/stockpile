@@ -6,7 +6,7 @@
   (:import
    [org.apache.commons.lang3 RandomStringUtils]
    [java.io ByteArrayInputStream File IOException]
-   [java.nio.file Files NoSuchFileException OpenOption StandardOpenOption]
+   [java.nio.file Files NoSuchFileException OpenOption Path StandardOpenOption]
    [java.nio.file.attribute FileAttribute]
    [puppetlabs.stockpile.queue MetaEntry]))
 
@@ -166,6 +166,49 @@
                         (slurp-entry q reconstituted)))))
              inputs
              entries))))))
+
+(deftest cleanup-failure-after-open-failure
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.toFile (.resolve tmpdir "queue"))
+           delete-failed (Exception. "delete")
+           rename-failed (Exception. "rename")
+           ex (try
+                (with-redefs [stock/delete-if-exists (fn [& args]
+                                                       (throw delete-failed))
+                              stock/rename-durably (fn [& args]
+                                                     (throw rename-failed))]
+                  (stock/create qdir))
+                (catch Exception ex
+                  ex))
+           data (ex-data ex)]
+       (is (= ::stock/path-cleanup-failure-after-error (:kind data)))
+       (is (= delete-failed (:exception data)))
+       (is (instance? Path (:path data)))
+       (is (.exists (.toFile (:path data))))
+       (is (= rename-failed (.getCause ex)))))))
+
+(deftest cleanup-failure-after-store-failure
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.toFile (.resolve tmpdir "queue"))
+           delete-failed (Exception. "delete")
+           write-failed (Exception. "write")
+           q (stock/create qdir)
+           ex (try
+                (with-redefs [stock/delete-if-exists (fn [& args]
+                                                       (throw delete-failed))
+                              stock/write-stream (fn [& args]
+                                                   (throw write-failed))]
+                  (store-str q "first"))
+                (catch Exception ex
+                  ex))
+           data (ex-data ex)]
+       (is (= ::stock/path-cleanup-failure-after-error (:kind data)))
+       (is (= delete-failed (:exception data)))
+       (is (instance? Path (:path data)))
+       (is (.exists (.toFile (:path data))))
+       (is (= write-failed (.getCause ex)))))))
 
 (deftest meta-encoding-round-trip
   (call-with-temp-dir-path
