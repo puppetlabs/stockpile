@@ -10,6 +10,13 @@
    [java.nio.file.attribute FileAttribute]
    [puppetlabs.stockpile.queue MetaEntry]))
 
+(defn relativize-file [wrt-path f]
+  (.relativize wrt-path (.toPath f)))
+
+(defn relative-pathstr-seq [parent]
+  (map #(str (relativize-file parent %))
+       (file-seq (.toFile parent))))
+
 (def small-test-fs
   (if-let [v (System/getenv "STOCKPILE_TINY_TEST_FS")]
     (stock/path-get v)
@@ -75,6 +82,17 @@
        (is (not (stock/entry-meta ent))))
      ent)))
 
+(defn purge-queue [qdir]
+  (let [q (stock/open qdir)
+        entries (stock/reduce q conj ())]
+    (doseq [entry entries]
+      (stock/discard entry))))
+
+(deftest bad-entries
+  (is (thrown? IllegalArgumentException (stock/entry "foo")))
+  (is (thrown? IllegalArgumentException (stock/entry "foo" 1)))
+  (is (thrown? IllegalArgumentException (stock/entry 1 2))))
+
 (deftest entry-ids
   (call-with-temp-dir-path
    (fn [tmpdir]
@@ -107,7 +125,9 @@
            (slurp-entry q entry-1)
            (catch Exception ex
              (= {:entry entry-1 :source (entry-path q entry-1)}
-                (ex-data ex)))))))))
+                (ex-data ex))))))
+     (is (= #{"" "queue" "queue/q" "queue/q/1-*so* meta" "queue/stockpile"}
+            (set (relative-pathstr-seq tmpdir)))))))
 
 (deftest basic-persistence
   ;; Some of the validation is handled implicitly by store-str
@@ -146,7 +166,12 @@
 
          (let [q (stock/open qdir)]
            (is (= "foo" (slurp-entry q ent-1)))
-           (is (= "bar" (slurp-entry q ent-2)))))))))
+           (is (= "bar" (slurp-entry q ent-2))))))
+
+     (is (= #{"" "queue" "queue/q"
+              "queue/q/1" "queue/q/2-meta bar"
+              "queue/stockpile"}
+            (set (relative-pathstr-seq tmpdir)))))))
 
 (deftest entry-manipulation
   (call-with-temp-dir-path
@@ -348,7 +373,8 @@
                               (if make-meta "with" "without")
                               (double (/ batch-size (/ (- stop start) billion))))
                       (flush))]
-              true)
+              (is (= #{"" "q" "stockpile"}
+                     (set (relative-pathstr-seq (.toPath qdir))))))
             (rm-r (.getAbsolutePath qdir)))))))))
 
 (deftest contending-enqueue-dequeue-performance
@@ -378,7 +404,9 @@
                  (double (/ batch-size
                             (/ (- (System/nanoTime) start)
                                billion))))
-         (flush))))))
+         (flush))
+       (is (= #{"" "q" "stockpile"}
+              (set (relative-pathstr-seq (.toPath qdir)))))))))
 
 (deftest simple-race
   (call-with-temp-dir-path
@@ -417,4 +445,6 @@
                                (recur i))))))]
        @writer @discarder
        (reset! finished? true)
-       @reader))))
+       @reader
+       (is (= #{"" "q" "stockpile"}
+              (set (relative-pathstr-seq (.toPath qdir)))))))))
