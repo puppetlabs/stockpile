@@ -235,6 +235,24 @@
        (is (.exists (.toFile (:path data))))
        (is (= write-failed (.getCause ex)))))))
 
+(deftest commit-failure-during-store
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.toFile (.resolve tmpdir "queue"))
+           rename-failed (Exception. "rename")
+           q (stock/create qdir)
+           ex (try
+                (with-redefs [stock/rename-durably (fn [& args]
+                                                     (throw rename-failed))]
+                  (store-str q "first"))
+                (catch Exception ex
+                  ex))
+           data (ex-data ex)]
+       (is (= ::stock/unable-to-commit (:kind data)))
+       (is (instance? Path (:stream-data data)))
+       (is (= "first" (slurp (.toFile (:stream-data data)))))
+       (is (= rename-failed (.getCause ex)))))))
+
 (deftest meta-encoding-round-trip
   (call-with-temp-dir-path
    (fn [tmpdir]
