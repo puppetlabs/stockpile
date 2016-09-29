@@ -7,7 +7,8 @@
    [org.apache.commons.lang3 RandomStringUtils]
    [java.io ByteArrayInputStream File IOException]
    [java.nio.file Files NoSuchFileException OpenOption StandardOpenOption]
-   [java.nio.file.attribute FileAttribute]))
+   [java.nio.file.attribute FileAttribute]
+   [puppetlabs.stockpile.queue MetaEntry]))
 
 (def small-test-fs
   (if-let [v (System/getenv "STOCKPILE_TINY_TEST_FS")]
@@ -54,9 +55,25 @@
 
 (defn store-str
   ([q s]
-   (stock/store q (-> s (.getBytes "UTF-8") ByteArrayInputStream.)))
+   (let [ent (stock/store q (-> s (.getBytes "UTF-8") ByteArrayInputStream.))
+         id (stock/entry-id ent)]
+     (is (integer? ent))
+     (is (integer? id))
+     (is (not (stock/entry-meta ent)))
+     ent))
   ([q s metadata]
-   (stock/store q (-> s (.getBytes "UTF-8") ByteArrayInputStream.) metadata)))
+   (let [ent (stock/store q
+                          (-> s (.getBytes "UTF-8") ByteArrayInputStream.)
+                          metadata)
+         id (stock/entry-id ent)
+         meta (stock/entry-meta ent)]
+     (is (integer? id))
+     (if metadata
+       (do
+         (is (instance? MetaEntry ent))
+         (is (= metadata (stock/entry-meta ent))))
+       (is (not (stock/entry-meta ent))))
+     ent)))
 
 (deftest entry-ids
   (call-with-temp-dir-path
@@ -78,15 +95,9 @@
        (let [entry-1 (store-str q "foo")
              entry-2 (store-str q "bar" "*so* meta")
              id-1 (stock/entry-id entry-1)
-             id-2 (stock/entry-id entry-2)
-             meta-1 (stock/entry-meta entry-1)
-             meta-2 (stock/entry-meta entry-2)]
-         (is id-1)
-         (is id-2)
+             id-2 (stock/entry-id entry-2)]
          (is (< id-1 id-2))
          (is (> id-2 id-1))
-         (is (not meta-1))
-         (is (= "*so* meta" meta-2))
          (is (= "foo" (slurp-entry q entry-1)))
          (is (= "bar" (slurp-entry q entry-2)))
 
@@ -99,21 +110,43 @@
                 (ex-data ex)))))))))
 
 (deftest basic-persistence
+  ;; Some of the validation is handled implicitly by store-str
   (call-with-temp-dir-path
    (fn [tmpdir]
      (let [qdir (.toFile (.resolve tmpdir "queue"))
-           newq (stock/create qdir)]
-       (let [entry-1 (store-str newq "foo" "meta foo")
-             q (stock/open qdir)
-             read-entries (stock/reduce q conj ())]
-         (is (= [entry-1] read-entries))
-         (is (= "foo" (slurp-entry q entry-1)))
-         (let [entry-2 (store-str q "bar" "meta bar")]
-           (let [q (stock/open qdir)
-                 read-entries (stock/reduce q conj #{})]
-             (is (= #{entry-2 entry-1} read-entries))
-             (is (= "foo" (slurp-entry q entry-1)))
-             (is (= "bar" (slurp-entry q entry-2))))))))))
+           reduction-0 (stock/reduce (stock/create qdir)
+                                     #(throw (Exception. "unexpected")) :empty)
+           ent-1 (-> (stock/open qdir) (store-str "foo"))
+           ent-1-id (stock/entry-id ent-1)
+           reduction-1 (stock/reduce (stock/open qdir) conj #{})]
+
+       (is (= :empty reduction-0))
+
+       ;; Check first reduction (should be one element)
+       (is (= #{ent-1} reduction-1))
+       (is (= #{(stock/entry ent-1-id nil)} reduction-1))
+       (let [ent (first reduction-1)]
+         (is (= ent-1-id (stock/entry-id ent)))
+         (is (not (stock/entry-meta ent))))
+
+       (is (= "foo" (slurp-entry (stock/open qdir) ent-1)))
+
+       (let [ent-2 (-> (stock/open qdir) (store-str "bar" "meta bar"))
+             ent-2-id (stock/entry-id ent-2)
+             reduction-2 (stock/reduce (stock/open qdir) conj #{})]
+
+         ;; Check second reduction (should be two elements)
+         (is (= #{ent-1 ent-2} reduction-2))
+         (is (= #{(stock/entry ent-1-id nil)
+                  (stock/entry ent-2-id "meta bar")}
+                reduction-2))
+         (let [ent (get reduction-2 ent-2)]
+           (is (= ent-2-id (stock/entry-id ent)))
+           (is (= "meta bar" (stock/entry-meta ent))))
+
+         (let [q (stock/open qdir)]
+           (is (= "foo" (slurp-entry q ent-1)))
+           (is (= "bar" (slurp-entry q ent-2)))))))))
 
 (deftest entry-manipulation
   (call-with-temp-dir-path
@@ -144,9 +177,8 @@
          ;; We need to use a very short length here to avoid falling
          ;; afoul of path length limits since 8 random unicode
          ;; chars could expand to say 36 encoded bytes.
-         (let [metadata (random-path-segment (rand-int 8))
-               entry (store-str q metadata metadata)]
-           (is (= metadata (stock/entry-meta entry)))))))))
+         (let [metadata (random-path-segment (rand-int 8))]
+           (store-str q metadata metadata)))))))
 
 (deftest existing-tmp-removal
   (call-with-temp-dir-path
@@ -223,10 +255,6 @@
         (is (= [] read-entries))))))
 
 (def billion 1000000000)
-
-(defn enqueue-all [q items]
-  (doall (for [item items]
-           (apply store-str item))))
 
 (deftest uncontended-performance
   ;; This also tests random metadata round trips
