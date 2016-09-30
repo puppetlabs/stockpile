@@ -6,9 +6,16 @@
   (:import
    [org.apache.commons.lang3 RandomStringUtils]
    [java.io ByteArrayInputStream File IOException]
-   [java.nio.file Files NoSuchFileException OpenOption StandardOpenOption]
+   [java.nio.file Files NoSuchFileException OpenOption Path StandardOpenOption]
    [java.nio.file.attribute FileAttribute]
    [puppetlabs.stockpile.queue MetaEntry]))
+
+(defn relativize-file [wrt-path f]
+  (.relativize wrt-path (.toPath f)))
+
+(defn relative-pathstr-seq [parent]
+  (map #(str (relativize-file parent %))
+       (file-seq (.toFile parent))))
 
 (def small-test-fs
   (if-let [v (System/getenv "STOCKPILE_TINY_TEST_FS")]
@@ -75,6 +82,17 @@
        (is (not (stock/entry-meta ent))))
      ent)))
 
+(defn purge-queue [qdir]
+  (let [q (stock/open qdir)
+        entries (stock/reduce q conj ())]
+    (doseq [entry entries]
+      (stock/discard entry))))
+
+(deftest bad-entries
+  (is (thrown? IllegalArgumentException (stock/entry "foo")))
+  (is (thrown? IllegalArgumentException (stock/entry "foo" 1)))
+  (is (thrown? IllegalArgumentException (stock/entry 1 2))))
+
 (deftest entry-ids
   (call-with-temp-dir-path
    (fn [tmpdir]
@@ -107,7 +125,9 @@
            (slurp-entry q entry-1)
            (catch Exception ex
              (= {:entry entry-1 :source (entry-path q entry-1)}
-                (ex-data ex)))))))))
+                (ex-data ex))))))
+     (is (= #{"" "queue" "queue/q" "queue/q/1-*so* meta" "queue/stockpile"}
+            (set (relative-pathstr-seq tmpdir)))))))
 
 (deftest basic-persistence
   ;; Some of the validation is handled implicitly by store-str
@@ -146,7 +166,12 @@
 
          (let [q (stock/open qdir)]
            (is (= "foo" (slurp-entry q ent-1)))
-           (is (= "bar" (slurp-entry q ent-2)))))))))
+           (is (= "bar" (slurp-entry q ent-2))))))
+
+     (is (= #{"" "queue" "queue/q"
+              "queue/q/1" "queue/q/2-meta bar"
+              "queue/stockpile"}
+            (set (relative-pathstr-seq tmpdir)))))))
 
 (deftest entry-manipulation
   (call-with-temp-dir-path
@@ -166,6 +191,86 @@
                         (slurp-entry q reconstituted)))))
              inputs
              entries))))))
+
+(deftest cleanup-failure-after-open-failure
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.toFile (.resolve tmpdir "queue"))
+           delete-failed (Exception. "delete")
+           rename-failed (Exception. "rename")
+           ex (try
+                (with-redefs [stock/delete-if-exists (fn [& args]
+                                                       (throw delete-failed))
+                              stock/rename-durably (fn [& args]
+                                                     (throw rename-failed))]
+                  (stock/create qdir))
+                (catch Exception ex
+                  ex))
+           data (ex-data ex)]
+       (is (= ::stock/path-cleanup-failure-after-error (:kind data)))
+       (is (= delete-failed (:exception data)))
+       (is (instance? Path (:path data)))
+       (is (.exists (.toFile (:path data))))
+       (is (= rename-failed (.getCause ex)))))))
+
+(deftest cleanup-failure-after-store-failure
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.toFile (.resolve tmpdir "queue"))
+           delete-failed (Exception. "delete")
+           write-failed (Exception. "write")
+           q (stock/create qdir)
+           ex (try
+                (with-redefs [stock/delete-if-exists (fn [& args]
+                                                       (throw delete-failed))
+                              stock/write-stream (fn [& args]
+                                                   (throw write-failed))]
+                  (store-str q "first"))
+                (catch Exception ex
+                  ex))
+           data (ex-data ex)]
+       (is (= ::stock/path-cleanup-failure-after-error (:kind data)))
+       (is (= delete-failed (:exception data)))
+       (is (instance? Path (:path data)))
+       (is (.exists (.toFile (:path data))))
+       (is (= write-failed (.getCause ex)))))))
+
+(deftest streaming-missing-entry
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.toFile (.resolve tmpdir "queue"))
+           delete-failed (Exception. "delete")
+           write-failed (Exception. "write")
+           q (stock/create qdir)
+           entry (stock/entry 0 nil)
+           ex (try
+                (stock/stream q entry)
+                (catch Exception ex
+                  ex))
+           data (ex-data ex)]
+       (is (= ::stock/no-such-entry (:kind data)))
+       (is (= entry (:entry data)))
+       (is (= (entry-path q entry) (:source data)))
+       (is (not (.exists (.toFile (:source data)))))
+       (is (instance? NoSuchFileException (.getCause ex)))))))
+
+(deftest commit-failure-during-store
+  (call-with-temp-dir-path
+   (fn [tmpdir]
+     (let [qdir (.toFile (.resolve tmpdir "queue"))
+           rename-failed (Exception. "rename")
+           q (stock/create qdir)
+           ex (try
+                (with-redefs [stock/rename-durably (fn [& args]
+                                                     (throw rename-failed))]
+                  (store-str q "first"))
+                (catch Exception ex
+                  ex))
+           data (ex-data ex)]
+       (is (= ::stock/unable-to-commit (:kind data)))
+       (is (instance? Path (:stream-data data)))
+       (is (= "first" (slurp (.toFile (:stream-data data)))))
+       (is (= rename-failed (.getCause ex)))))))
 
 (deftest meta-encoding-round-trip
   (call-with-temp-dir-path
@@ -282,20 +387,31 @@
                               (if make-meta "with" "without")
                               (double (/ batch-size (/ (- stop start) billion))))
                       (flush))
-
-                  ;; Uncontended dequeue
+                  ;; Uncontended streams
                   start (System/nanoTime)
                   _ (is (= (set (map str (range batch-size)))
                            (set (for [[metadata entry] items]
                                   (slurp-entry q entry)))))
                   stop (System/nanoTime)
                   _ (binding [*out* *err*]
-                      (printf "Dequeued %d tiny messages %s metadata at %.2f/s\n"
+                      (printf "Streamed %d tiny messages %s metadata at %.2f/s\n"
+                              batch-size
+                              (if make-meta "with" "without")
+                              (double (/ batch-size (/ (- stop start) billion))))
+                      (flush))
+                  ;; Uncontended discard
+                  start (System/nanoTime)
+                  _ (doseq [[metadata entry] items]
+                      (stock/discard q entry))
+                  stop (System/nanoTime)
+                  _ (binding [*out* *err*]
+                      (printf "Discarded %d tiny messages %s metadata at %.2f/s\n"
                               batch-size
                               (if make-meta "with" "without")
                               (double (/ batch-size (/ (- stop start) billion))))
                       (flush))]
-              true)
+              (is (= #{"" "q" "stockpile"}
+                     (set (relative-pathstr-seq (.toPath qdir))))))
             (rm-r (.getAbsolutePath qdir)))))))))
 
 (deftest contending-enqueue-dequeue-performance
@@ -325,7 +441,9 @@
                  (double (/ batch-size
                             (/ (- (System/nanoTime) start)
                                billion))))
-         (flush))))))
+         (flush))
+       (is (= #{"" "q" "stockpile"}
+              (set (relative-pathstr-seq (.toPath qdir)))))))))
 
 (deftest simple-race
   (call-with-temp-dir-path
@@ -364,4 +482,6 @@
                                (recur i))))))]
        @writer @discarder
        (reset! finished? true)
-       @reader))))
+       @reader
+       (is (= #{"" "q" "stockpile"}
+              (set (relative-pathstr-seq (.toPath qdir)))))))))

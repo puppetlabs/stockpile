@@ -2,7 +2,7 @@
   (:refer-clojure :exclude [reduce])
   (:import
    [clojure.lang BigInt]
-   [java.io File FileOutputStream ByteArrayInputStream]
+   [java.io ByteArrayInputStream File FileOutputStream InputStream]
    [java.nio.file AtomicMoveNotSupportedException DirectoryStream
     FileSystemException NoSuchFileException Path Paths]
    [java.nio.channels FileChannel]
@@ -80,7 +80,7 @@
   IOException.  The rename may also fail with
   AtomicMoveNotSupportedException (perhaps if src and dest are on
   different filesystems).  See java.nio.file.Files/move for additional
-  information.  Fsyncs the dest parent directory to make the final
+  information.  fsyncs the dest parent directory to make the final
   rename durable unless sync-parent? is false (presumably the caller
   will ensure the sync)."
   [src dest sync-parent?]
@@ -88,18 +88,28 @@
   (when sync-parent?
     (fsync (.getParent (as-path dest)) true)))
 
+(defn- delete-if-exists [path]
+  ;; Solely exists for error handling tests
+  (Files/deleteIfExists path))
+
+(defn- write-stream [^InputStream stream ^Path dest]
+  ;; Solely exists for error handling tests
+  (Files/copy stream dest (copts [copt-replace])))
+
 (defn- durably-establish
   "Calls (write-content temp-path) and durably stores the resulting
-  temp-file contents at path (a File, Path, or String).  Fsyncs the
+  temp-file contents at path (a File, Path, or String).  fsyncs the
   parent directory of dest to make the final rename durable unless
   sync-parent? is false (presumably the caller will ensure the sync).
   See rename-durably for additional information.  As compared
   to (store q stream ...), the write function here allows the caller
   more control over what happens when something goes wrong (say they
   know how they might free up space in the filesystem if write fails).
-  Currently when an exception is thrown, it's possible (but unlikely)
-  that this function may have left a temp file in the parent directory
-  of path."
+  If there's an error and the attempt to delete the temp file fails,
+  throws an ex-info exception of
+  {:kind ::path-cleanup-failure-after-error :path p :exception
+  exception} with the exception precipitating the broader command
+  failure as the cause."
   [path write-content sync-parent?]
   (let [parent (.getParent (as-path path))
         tmp (create-tmp-file parent)]
@@ -108,12 +118,15 @@
       (fsync tmp false)
       (rename-durably tmp path sync-parent?)
       (catch Exception ex
-        ;; This approach will be revisited/revised after we discuss
-        ;; the alternatives a bit further.
         (try
-          (Files/deleteIfExists tmp)
-          (catch Exception ex
-            true))
+          (delete-if-exists tmp)
+          (catch Exception del-ex
+            (throw
+             (ex-info (str "unable to delete temp file " tmp " after error")
+                      {:kind ::path-cleanup-failure-after-error
+                       :path tmp
+                       :exception del-ex}
+                      ex))))
         (throw ex)))))
 
 (defn- qpath ^Path [{:keys [^Path directory] :as q}]
@@ -175,8 +188,30 @@
   (.get next))
 
 (defn create
+  ;; NOTE: the store documentation refers to this docstring.
   "Creates a new queue in directory, which must not exist, and returns
-  the queue."
+  the queue.  If there's an error, it's possible that the attempt to
+  clean up may fail and leave behind a temporary file.  In that case
+  create throws an ex-info exception of
+  {:kind ::path-cleanup-failure-after-error :path p :exception ex}
+  with the exception produced by the original failure as the cause.
+  To handle that possibility, callers may want to structure
+  invocations with a nested try like this:
+    (try
+      (try+
+        (stock/create ...)
+        (catch [:kind ::path-cleanup-failure-after-error]
+               {:keys [path exception cause]}
+          ;; Perhaps log or try to clean up the path more aggressively
+          (throw cause)))
+      (catch SomeExceptionThatCausedCreateToFail
+          ;; Reached for this exception whether or not there was a
+          ;; cleanup failure
+        ...)
+      ...)
+  Additionally, among other exceptions the current implementation may
+  throw any documented by java.nio.file.Files/move for an ATOMIC_MOVE
+  within the same directory."
   [directory]
   (let [top (as-path directory)
         q (.resolve top "q")]
@@ -265,7 +300,9 @@
   subtracting the 20 (UTF-8 encoded Basic Latin block) bytes reserved
   for internal use, there may be up to 235 bytes available for the
   metadata.  Of course how many Unicode characters that will allow
-  depends on their size when converted to UTF-8."
+  depends on their size when converted to UTF-8.  In addition, this
+  function may throw any of the exceptions documented by
+  create."
   ([q stream] (store q stream nil))
   ([q ^ByteArrayInputStream stream metadata]
    (let [^AtomicLong next (:next-likely-id q)
@@ -274,14 +311,17 @@
        ;; It might be possible to optimize some cases with
        ;; transferFrom/transferTo eventually.
        (try
-         (Files/copy stream tmp-dest (copts [copt-replace]))
+         (write-stream stream tmp-dest)
          (catch Exception ex
-           ;; This approach will be revisited/revised after we discuss
-           ;; the alternatives a bit further.
            (try
-             (Files/delete tmp-dest)
-             (catch Exception ex
-               true))
+             (delete-if-exists tmp-dest)
+             (catch Exception del-ex
+               (throw
+                (ex-info (str "unable to delete temp file " tmp-dest " after error")
+                         {:kind ::path-cleanup-failure-after-error
+                          :path tmp-dest
+                          :exception del-ex}
+                         ex))))
            (throw ex)))
        (try
          (fsync tmp-dest false)
