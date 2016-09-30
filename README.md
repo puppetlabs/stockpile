@@ -69,6 +69,43 @@ root, you can invoke `./run-test --use-sudo` to do the same.  Though
 invoking `./run-test` outside of a "throwaway" virtual machine is not
 recommended right now.
 
+## Implementation notes
+
+The current implementation follows the the traditional POSIX-oriented
+approach of storing each entry in its own file, with a name that's
+guaranteed to be unique, and where durability is provided by this
+sequence of operations:
+
+  - Write the entry data to a temp file,
+  - fdatasync() the temp file,
+  - rename() the temp file to the final name,
+  - and fsync() the parent directory.
+
+Or rather, stockpile calls JVM functions that are believed to provide
+that behavior or an equivalent result.  The parent directory fsync()
+is required in order to ensure that the destination file name is also
+durable.
+
+Given this approach, the "fsync rate" of the underlying filesystem
+will constrain the entry storage rate for a given queue, and so
+batching multiple items into a single entry (when feasible) may be an
+effective way to increase performance.
+
+### An overview of relevant concepts:
+
+  - http://blog.httrack.com/blog/2013/11/15/everything-you-always-wanted-to-know-about-fsync/
+
+### Related JVM methods and documentation:
+
+  - https://docs.oracle.com/javase/7/docs/api/java/nio/channels/FileChannel.html#force(boolean)
+  - https://docs.oracle.com/javase/7/docs/api/java/nio/file/Files.html#move(java.nio.file.Path,%20java.nio.file.Path,%20java.nio.file.CopyOption...)
+
+### Supporting POSIX functions:
+
+  - http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html
+  - http://pubs.opengroup.org/onlinepubs/9699919799/functions/fdatasync.html
+  - http://pubs.opengroup.org/onlinepubs/9699919799/functions/rename.html
+
 ## License
 
 Copyright © 2016 Puppet Labs Inc
