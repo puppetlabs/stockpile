@@ -54,6 +54,9 @@
   (entry-meta [this] nil))
 
 (defn- create-tmp-file [parent]
+  ;; Don't change the prefix/suffix here casually.  Other
+  ;; code below assumes, for example, that a temporary file will never
+  ;; be named "stockpile".
   (Files/createTempFile (as-path parent) "tmp-" ""
                         (into-array FileAttribute [])))
 
@@ -95,39 +98,6 @@
 (defn- write-stream [^InputStream stream ^Path dest]
   ;; Solely exists for error handling tests
   (Files/copy stream dest (copts [copt-replace])))
-
-(defn- durably-establish
-  "Calls (write-content temp-path) and durably stores the resulting
-  temp-file contents at path (a File, Path, or String).  fsyncs the
-  parent directory of dest to make the final rename durable unless
-  sync-parent? is false (presumably the caller will ensure the sync).
-  See rename-durably for additional information.  As compared
-  to (store q stream ...), the write function here allows the caller
-  more control over what happens when something goes wrong (say they
-  know how they might free up space in the filesystem if write fails).
-  If there's an error and the attempt to delete the temp file fails,
-  throws an ex-info exception of
-  {:kind ::path-cleanup-failure-after-error :path p :exception
-  exception} with the exception precipitating the broader command
-  failure as the cause."
-  [path write-content sync-parent?]
-  (let [parent (.getParent (as-path path))
-        tmp (create-tmp-file parent)]
-    (try
-      (write-content tmp)
-      (fsync tmp false)
-      (rename-durably tmp path sync-parent?)
-      (catch Exception ex
-        (try
-          (delete-if-exists tmp)
-          (catch Exception del-ex
-            (throw
-             (ex-info (str "unable to delete temp file " tmp " after error")
-                      {:kind ::path-cleanup-failure-after-error
-                       :path tmp
-                       :exception del-ex}
-                      ex))))
-        (throw ex)))))
 
 (defn- qpath ^Path [{:keys [^Path directory] :as q}]
   (.resolve directory "q"))
@@ -188,45 +158,20 @@
   (.get next))
 
 (defn create
-  ;; NOTE: the store documentation refers to this docstring.
   "Creates a new queue in directory, which must not exist, and returns
-  the queue.  If there's an error, it's possible that the attempt to
-  clean up may fail and leave behind a temporary file.  In that case
-  create throws an ex-info exception of
-  {:kind ::path-cleanup-failure-after-error :path p :exception ex}
-  with the exception produced by the original failure as the cause.
-  To handle that possibility, callers may want to structure
-  invocations with a nested try like this:
-    (try
-      (try+
-        (stock/create ...)
-        (catch [:kind ::path-cleanup-failure-after-error]
-               {:keys [path exception cause]}
-          ;; Perhaps log or try to clean up the path more aggressively
-          (throw cause)))
-      (catch SomeExceptionThatCausedCreateToFail
-          ;; Reached for this exception whether or not there was a
-          ;; cleanup failure
-        ...)
-      ...)
-  Additionally, among other exceptions the current implementation may
-  throw any documented by java.nio.file.Files/move for an ATOMIC_MOVE
-  within the same directory."
+  the queue.  If an exception is thrown, the directory named may or
+  may not exist and may or may not be empty."
   [directory]
   (let [top (as-path directory)
         q (.resolve top "q")]
     (Files/createDirectory top (into-array FileAttribute []))
     (Files/createDirectory q (into-array FileAttribute []))
     ;; This sentinel is last - indicates the queue is *ready*
-    (durably-establish (.resolve top "stockpile")
-                       ;; Assumes that copy won't use a
-                       ;; BufferedWriter (FilterOutputStream) in this
-                       ;; case (otherwise it'll be broken with at
-                       ;; least openjdk-7.
-                       (fn [^Path f]
-                          (with-open [out (FileOutputStream. (.toFile f))]
-                            (.write out (.getBytes "0 stockpile" "UTF-8"))))
-                       false)
+    (let [tmp (create-tmp-file top)]
+      (with-open [out (FileOutputStream. (.toFile tmp))]
+        (.write out (.getBytes "0 stockpile" "UTF-8")))
+      (fsync tmp false)
+      (rename-durably tmp (.resolve top "stockpile") false))
     (fsync top true)
     (->Stockpile top (AtomicLong. 0))))
 
@@ -300,9 +245,28 @@
   subtracting the 20 (UTF-8 encoded Basic Latin block) bytes reserved
   for internal use, there may be up to 235 bytes available for the
   metadata.  Of course how many Unicode characters that will allow
-  depends on their size when converted to UTF-8.  In addition, this
-  function may throw any of the exceptions documented by
-  create."
+  depends on their size when converted to UTF-8.  Whenever there's an
+  error, it's possible that the attempt to clean up may fail and leave
+  behind a temporary file.  In that case create throws an ex-info
+  exception of {:kind ::path-cleanup-failure-after-error :path
+  p :exception ex} with the exception produced by the original failure
+  as the cause.  To handle that possibility, callers may want to
+  structure invocations with a nested try like this:
+    (try
+      (try+
+        (stock/create ...)
+        (catch [:kind ::path-cleanup-failure-after-error]
+               {:keys [path exception cause]}
+          ;; Perhaps log or try to clean up the path more aggressively
+          (throw cause)))
+      (catch SomeExceptionThatCausedCreateToFail
+          ;; Reached for this exception whether or not there was a
+          ;; cleanup failure
+        ...)
+      ...)
+  Additionally, among other exceptions, the current implementation may
+  throw any documented by java.nio.file.Files/move for an ATOMIC_MOVE
+  within the same directory."
   ([q stream] (store q stream nil))
   ([q ^ByteArrayInputStream stream metadata]
    (let [^AtomicLong next (:next-likely-id q)

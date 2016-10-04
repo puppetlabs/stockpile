@@ -192,27 +192,6 @@
              inputs
              entries))))))
 
-(deftest cleanup-failure-after-open-failure
-  (call-with-temp-dir-path
-   (fn [tmpdir]
-     (let [qdir (.toFile (.resolve tmpdir "queue"))
-           delete-failed (Exception. "delete")
-           rename-failed (Exception. "rename")
-           ex (try
-                (with-redefs [stock/delete-if-exists (fn [& args]
-                                                       (throw delete-failed))
-                              stock/rename-durably (fn [& args]
-                                                     (throw rename-failed))]
-                  (stock/create qdir))
-                (catch Exception ex
-                  ex))
-           data (ex-data ex)]
-       (is (= ::stock/path-cleanup-failure-after-error (:kind data)))
-       (is (= delete-failed (:exception data)))
-       (is (instance? Path (:path data)))
-       (is (.exists (.toFile (:path data))))
-       (is (= rename-failed (.getCause ex)))))))
-
 (deftest cleanup-failure-after-store-failure
   (call-with-temp-dir-path
    (fn [tmpdir]
