@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "file_format": "This MAINTAINERS file format is described at https://github.com/puppetlabs/maintainers",
+  "issues": "https://tickets.puppet.com/browse/PDB",
+  "people": [
+    {
+      "github": "rbrw",
+      "email": "rlb@puppet.com",
+      "name": "Rob Browning",
+    },
+    {
+      "github": "senior",
+      "email": "ryan.senior@puppet.com",
+      "name": "Ryan Senior"
+    }
+  ]
+}
