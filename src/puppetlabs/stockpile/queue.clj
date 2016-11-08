@@ -256,9 +256,9 @@
       (try+
         (stock/create ...)
         (catch [:kind ::path-cleanup-failure-after-error]
-               {:keys [path exception cause]}
+               {:keys [path exception]}
           ;; Perhaps log or try to clean up the path more aggressively
-          (throw cause)))
+          (throw (:cause &throw-context)))
       (catch SomeExceptionThatCausedCreateToFail
           ;; Reached for this exception whether or not there was a
           ;; cleanup failure
