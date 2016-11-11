@@ -1,5 +1,7 @@
 (ns puppetlabs.stockpile.queue
   (:refer-clojure :exclude [reduce])
+  (:require
+   [puppetlabs.i18n.core :refer [trs]])
   (:import
    [clojure.lang BigInt]
    [java.io ByteArrayInputStream File FileOutputStream InputStream]
@@ -141,13 +143,15 @@
   (let [id (if (integer? id)
              (long id)
              (throw
-              (IllegalArgumentException. (str "id is not an integer: " id))))]
+              (IllegalArgumentException.
+               (trs "id is not an integer: {0}" id))))]
     (cond
       (nil? metadata) id
 
       (not (string? metadata))
       (throw
-       (IllegalArgumentException. (str "metadata is not a string: " metadata)))
+       (IllegalArgumentException.
+        (trs "metadata is not a string: {0}" (pr-str metadata))))
 
       :else (->MetaEntry id metadata))))
 
@@ -186,9 +190,9 @@
           info (String. (Files/readAllBytes info-file) "UTF-8")]
       (when-not (= "0 stockpile" info)
         (throw (IllegalStateException.
-                (format "Invalid queue token %s found in %s"
-                        (pr-str info)
-                        (pr-str info-file))))))
+                (trs "Invalid queue token {0} found in {1}"
+                     (pr-str info)
+                     (pr-str (str info-file)))))))
     (let [max-id (reduce-paths (fn [result ^Path p]
                                  (let [name (str (basename p))]
                                    (cond
@@ -281,7 +285,8 @@
              (delete-if-exists tmp-dest)
              (catch Exception del-ex
                (throw
-                (ex-info (str "unable to delete temp file " tmp-dest " after error")
+                (ex-info (trs "unable to delete temp file {0} after error"
+                              (pr-str (str tmp-dest)))
                          {:kind ::path-cleanup-failure-after-error
                           :path tmp-dest
                           :exception del-ex}
@@ -302,8 +307,10 @@
                (entry id metadata)
                (recur))))
          (catch Exception ex
-           (throw (ex-info "unable to commit" {:kind ::unable-to-commit
-                                               :stream-data tmp-dest}
+           (throw (ex-info (trs "unable to commit; leaving stream data in {0}"
+                                (pr-str (str tmp-dest)))
+                           {:kind ::unable-to-commit
+                            :stream-data tmp-dest}
                            ex))))))))
 
 (defn stream
@@ -318,9 +325,9 @@
       (catch NoSuchFileException ex
         (let [m (entry-meta entry)
               id (entry-id entry)]
-          (throw (ex-info (str "No file found for entry "
+          (throw (ex-info (trs "No file found for entry {0} at {1}"
                                (if-not m id (pr-str [id m]))
-                               " at " (pr-str (str path)))
+                               (pr-str (str path)))
                           {:kind ::no-such-entry :entry entry :source path}
                           ex)))))))
 

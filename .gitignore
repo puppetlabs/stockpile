@@ -3,3 +3,8 @@
 /.nrepl-port
 /checkouts/
 /target/
+
+# clj-i18n
+/mp-*
+/resources/locales.clj
+/resources/puppetlabs/stockpile/*.class

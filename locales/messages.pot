@@ -1,0 +1,42 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR Puppet <docs@puppet.com>
+# This file is distributed under the same license as the puppetlabs.stockpile package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: puppetlabs.stockpile \n"
+"Report-Msgid-Bugs-To: docs@puppet.com\n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/puppetlabs/stockpile/queue.clj
+msgid "id is not an integer: {0}"
+msgstr ""
+
+#: src/puppetlabs/stockpile/queue.clj
+msgid "metadata is not a string: {0}"
+msgstr ""
+
+#: src/puppetlabs/stockpile/queue.clj
+msgid "Invalid queue token {0} found in {1}"
+msgstr ""
+
+#: src/puppetlabs/stockpile/queue.clj
+msgid "unable to delete temp file {0} after error"
+msgstr ""
+
+#: src/puppetlabs/stockpile/queue.clj
+msgid "unable to commit; leaving stream data in {0}"
+msgstr ""
+
+#: src/puppetlabs/stockpile/queue.clj
+msgid "No file found for entry {0} at {1}"
+msgstr ""
