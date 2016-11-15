@@ -1,12 +1,10 @@
 *~
-/target
-/classes
-/checkouts
-pom.xml
-pom.xml.asc
-*.jar
-*.class
 /.lein-*
 /.nrepl-port
-.hgignore
-.hg/
+/checkouts/
+/target/
+
+# clj-i18n
+/mp-*
+/resources/locales.clj
+/resources/puppetlabs/stockpile/*.class
