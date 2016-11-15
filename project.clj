@@ -1,4 +1,4 @@
-(defproject puppetlabs/stockpile "0.0.4"
+(defproject puppetlabs/stockpile "0.1.0-SNAPSHOT"
   :description "Simple, durable Clojure queuing library"
   :url "https://github.com/puppetlabs/stockpile"
   :license {:name "Apache License Version 2.0"
