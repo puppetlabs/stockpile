@@ -1,9 +1,9 @@
 
-name: stockpile tests
+name: main
 on: [push, pull_request]
 
 jobs:
-  main:
+  lein-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
