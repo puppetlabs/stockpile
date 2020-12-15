@@ -1,0 +1,24 @@
+
+name: stockpile tests
+on: [push, pull_request]
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+      - uses: actions/cache@d29c1df198dd38ac88e0ae23a2881b99c2d20e68
+        # v2.1.0
+        with:
+          key: stockpile-clj-job-cache
+          path: |
+            /var/cache/apt/archives
+            ~/.m2
+      - run: sudo -i apt-get update
+      - run: sudo -i apt-get -y install leiningen
+      - run: ./run-test --use-sudo
