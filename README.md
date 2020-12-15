@@ -1,4 +1,4 @@
-# stockpile [![Clojars Project](https://img.shields.io/clojars/v/puppetlabs/stockpile.svg)](https://clojars.org/puppetlabs/stockpile) [![Build Status](https://travis-ci.org/puppetlabs/stockpile.svg?branch=master)](https://travis-ci.org/puppetlabs/stockpile)
+# stockpile [![Clojars Project](https://img.shields.io/clojars/v/puppetlabs/stockpile.svg)](https://clojars.org/puppetlabs/stockpile) ![main](https://github.com/puppetlabs/stockpile/workflows/main/badge.svg)
 
 A simple, durable Clojure queueing library.  While this is believed to
 be reasonably solid, it is still relatively new, and the API or
