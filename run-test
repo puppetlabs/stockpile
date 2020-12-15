@@ -6,6 +6,9 @@ set -euxo pipefail
 test -x ext/test/manage-tinyfs
 test -f src/puppetlabs/stockpile/queue.clj
 
+pwd
+find | sort
+
 manage_tinyfs="$(pwd)/ext/test/manage-tinyfs"
 
 usage()
@@ -74,6 +77,7 @@ fi
 trap clean-up EXIT
 
 if [ "$test_tinyfs" ]; then
+    mkdir -p target
     tmpdir="$(mktemp -d "$(pwd)/target/run-test-XXXXXXX")"
     destroy_tinyfs=true
     as-root "$manage_tinyfs" create "$tmpdir" "$(id -u)" "$(id -g)"
