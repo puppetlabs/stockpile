@@ -31,8 +31,13 @@ the queue `store` docstring for further information.
 
 Stockpile is intended to work correctly on any filesystem where rename
 (ATOMIC\_MOVE) works correctly, and where calling fsync/fdatasync on a
-file and its parent directory makes the file durable.  At last look,
-[that did not include OS X](https://bugs.openjdk.java.net/browse/JDK-8080589).
+file and its parent directory makes the file durable.  In the past
+(before JDK 9), [that did not include OS X](https://bugs.openjdk.java.net/browse/JDK-8080589).
+
+And there's apparently a [controversy](http://mail.openjdk.java.net/pipermail/nio-dev/2015-May/003140.html)
+about whether to continue to support the undocumented method stockpile
+uses to sync the parent directory, or to
+[provide some other documented mechanism](https://bugs.java.com/bugdatabase/view_bug.do?bug_id=8080235).
 
 Unless the items being inserted into the queue are large enough for
 the sequential transfer rate to dominate, the insertion rate is likely
