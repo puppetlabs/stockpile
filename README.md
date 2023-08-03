@@ -67,12 +67,12 @@ than 10MB of free space, that is not the current filesystem:
 
 During the tests stockpile may repeatedly fill that filesystem.
 
-You can also run the tests via `./run-test`, and if you're on Linux
-and root, it will automatically set up, use, and tear down a suitable
-tiny loopback filesystem.  Alternately, if you have sudo access to
-root, you can invoke `./run-test --use-sudo` to do the same.  Though
-invoking `./run-test` outside of a "throwaway" virtual machine is not
-recommended right now.
+You can also run the tests via `dev/run-test`, and if you're on
+Linux and root, it will automatically set up, use, and tear down a
+suitable tiny loopback filesystem.  Alternately, if you have sudo
+access to root, you can invoke `dev/run-test --use-sudo` to do the
+same.  Though invoking `dev/run-test` outside of a "throwaway"
+virtual machine is not recommended right now.
 
 ## Implementation notes
 
