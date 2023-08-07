@@ -1,0 +1,50 @@
+#!/bin/bash
+
+set -ueo pipefail
+
+usage()
+{
+    echo "Usage: java-env [--expect-major N] JAVA_HOME [--] CMD [ARG ...]";
+}
+
+misuse() { usage 1>&2; exit 2; }
+
+expect_maj=''
+
+while test $# -gt 0; do
+    case "$1" in
+        --expect-major)
+            shift
+            test $# -gt 1 || misuse
+            expect_maj="$1"
+            shift
+            ;;
+        -*|--*) misuse; break ;;
+        --|*) break ;;
+    esac
+done
+
+test $# -gt 1 || misuse
+java_home="$1"
+shift
+
+export JAVA_HOME="$java_home"
+PATH="$JAVA_HOME/bin:$PATH"
+
+if test "$expect_maj"; then
+    if test "$expect_maj" -lt 10; then
+        ver="$(java -version 2>&1 | head -1)"
+        if ! [[ "$ver" =~ ^openjdk\ version\ \"1\.$expect_maj(\.|$) ]] ; then
+            echo "error: expected jdk $expect_maj, not $ver" 1>&2
+            exit 2
+        fi
+    else
+        ver="$(java --version 2>&1 | head -1)"
+        if ! [[ "$ver" =~ ^openjdk\ $expect_maj(\.|$) ]] ; then
+            echo "error: expected jdk $expect_maj, not $ver" 1>&2
+            exit 2
+        fi
+    fi
+fi
+
+exec "$@"
